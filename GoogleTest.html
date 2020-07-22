@@ -1,0 +1,210 @@
+﻿<!DOCTYPE html>
+<html>
+<head>
+    <meta http-equiv="Content-Security-Policy" content="script-src 'self' 'unsafe-inline' 'unsafe-eval' https://apis.google.com  ; connect-src 'self' https://oauth2.googleapis.com http://seveniron"  />
+    <meta charset="utf-8" />
+    <title>Google API</title>
+    <style>
+        body {
+            font-family: Arial;
+            font-size:14px;
+        }
+        .f-bold{
+            font-weight:bold;
+        }
+        .d-none{
+            display:none;
+        }
+    </style>
+</head>
+<body>
+    <div style="margin-left:2em;">
+        <div style="width:100%;text-align:center;margin-bottom:.25em;font-weight:bold;">This page needs to be run in a web browser</div>
+        <div class="f-bold">Discovery Document</div>
+        <div>https://accounts.google.com/.well-known/openid-configuration</div>
+        <div id="userid" style="margin-top:1em;"></div>
+        <div class="f-bold" style="margin-top:1em;">Client ID</div>
+        <input type="text" id="clientid" style="width:50em;" value="" />
+        <div class="f-bold" style="margin-top:1em;">Target API (Must get a GET type)</div>
+        <input type="text" id="testapi" style="width:50em;" />
+
+        <div id="lbluserid" style="margin-top:1em"></div>
+        <div style="margin-top:2em">
+            <button disabled id="btnlogin">Login</button>
+            <button disabled id="btnverifytoken" style="margin-left:2em;">Verify Token</button>
+            <button disabled id="btntestapi" style="margin-left:2em;">Test API</button>
+        </div>
+        <div id="lblexpires" class="f-bold d-none" style="margin-top:3em">Tokens Expire</div>
+        <div id="tokenexpires"></div>
+        <div id="lblaccesstoken" class="f-bold d-none" style="margin-top:1em">Access Token</div>
+        <div id="accesstoken" style="word-break:break-all;"></div>
+        <div id="lblidtoken" class="f-bold d-none" style="margin-top:1em;">ID Token</div>
+        <div style="display:flex;width:100%;">
+            <div id="idtoken" style="width:45%;margin-right:5%;word-break:break-all;"></div>
+            <div id="tokenvals" style="width:45%"></div>
+        </div>
+    </div>
+</body>
+<script src="https://apis.google.com/js/platform.js?onload=initgapi" async defer></script>
+<script>
+    // references: https://developers.google.com/identity/sign-in/web/reference
+    // https://console.developers.google.com/apis/dashboard?project=YOURPROJECT&folder=&organizationId=
+    var gAuth;
+    document.getElementById('btnlogin').addEventListener('click', () => doLogin());
+    document.getElementById('btnverifytoken').addEventListener('click', () => doTokenVerify());
+    document.getElementById('btntestapi').addEventListener('click', () => doTestAPI(true));
+  
+    function initgapi() {
+        let clientId = window.localStorage.getItem("google_clientid");
+        document.getElementById('clientid').value = clientId === null ? '' : clientId;
+   
+        if ((clientId !== null) && (clientId.length > 0)){
+            gapi.load('client', initAuth);
+        }else{
+            document.getElementById('btnlogin').disabled = false;
+        }
+        let testurl = window.localStorage.getItem("google_testurl");
+        if (testurl !== null){
+            document.getElementById('testapi').value = testurl;
+        }
+ 
+    }
+    function initAuth() {
+        let clientId = document.getElementById('clientid').value;
+        if (clientId.length === 0) {return;}
+        gAuth = gapi.auth2.init({
+            'clientId': clientId
+        });
+        gAuth.then(() => {
+            // gAuth is fully initialized
+            setupSigninStatus();
+
+        },
+        (error) => {
+          alert('gAuth initialization failed. Reason: ' + error.details);
+        });
+       
+    }
+   
+    function setupSigninStatus() {
+        if (gAuth.isSignedIn.get()) {
+            // show the signed in User
+            const gUser = gAuth.currentUser.get();
+            const userProfile = gUser.getBasicProfile();
+            document.getElementById('lbluserid').innerText = 'Signed in as: ' + userProfile.getName();
+            document.getElementById('btnlogin').disabled = false;
+            document.getElementById('btnverifytoken').disabled = false;
+            document.getElementById('btntestapi').disabled = false;
+            const authResponse = gUser.getAuthResponse(true);  // Include Authorization Data (access token and scopes)
+            document.getElementById('accesstoken').innerText = authResponse.access_token;
+            document.getElementById('lblaccesstoken').classList.remove('d-none');
+            document.getElementById('lblidtoken').classList.remove('d-none');
+            document.getElementById('idtoken').innerText = authResponse.id_token;
+            const expDate = new Date(authResponse.expires_at);
+            document.getElementById('tokenexpires').innerText = expDate.toLocaleDateString() + ' ' + expDate.toLocaleTimeString();
+            document.getElementById('lblexpires').classList.remove('d-none');
+
+        } else {
+            document.getElementById('lbluserid').innerText = 'Not signed in';
+            document.getElementById('btnlogin').disabled = false;
+            document.getElementById('btnverifytoken').disabled = true;
+            document.getElementById('btntestapi').disabled = true;
+            document.getElementById('lblaccesstoken').classList.add('d-none');
+            document.getElementById('accesstoken').innerText = '';
+            document.getElementById('lblidtoken').classList.add('d-none');
+            document.getElementById('idtoken').innerText = '';
+            document.getElementById('lblexpires').classList.remove('d-none');
+            document.getElementById('tokenexpires').innerText = '';
+            document.getElementById('tokenvals').innerText = '';
+      }
+    }
+   
+    function doLogin() {
+         if (typeof gapi.auth2 === 'undefined'){
+            if (document.getElementById('clientid').value === '' ){
+                alert('A Client ID needs to be entered');
+                return;
+            }
+            else{
+                gapi.load('client', () => {
+                    let clientId = document.getElementById('clientid').value;
+                    gAuth = gapi.auth2.init({
+                        'clientId': clientId
+                    });
+                    gAuth.then(() => {
+                        gapi.auth2.getAuthInstance().signIn().then(() => setupSigninStatus());            
+                },
+                (error) => {
+                    alert('gAuth initialization failed. Reason: ' + error.details);
+                    });                    
+                }) ;
+            }
+        }else{
+            gapi.auth2.getAuthInstance().signIn().then(() => setupSigninStatus());
+        }
+    }
+     
+   
+    async function doTokenVerify() {
+        window.localStorage.setItem('google_clientid', document.getElementById('clientid').value);
+        const idToken = document.getElementById('idtoken').innerText;
+        if (idToken.length === 0) {
+            alert('ID Token not supplied');
+            return;
+        }
+        const response = await fetch('https://oauth2.googleapis.com/tokeninfo?id_token=' + idToken);
+        const data = await response.text(); 
+        if (response.ok === true) {
+            showTokenInfo(data);
+        } else {
+            alert('Getting tokenInfo failed. Reason: ' + data);
+        }
+    }
+    function showTokenInfo(data){
+        const tokenValEle = document.getElementById('tokenvals');
+        tokenValEle.innerText = '';
+        let tokenInfo = {};
+        try {
+            tokenInfo = JSON.parse(data);
+        }
+        catch{
+            tokenInfo = {};
+        }
+        for (const p in tokenInfo) {
+            tokenValEle.insertAdjacentHTML('beforeend', `<div style="margin-top:.25em;word-break:break-all">"${p}" : "${tokenInfo[p]}"</div>`);
+        }
+    }
+    async function doTestAPI(withBearerToken) {
+        let testurl = document.getElementById('testapi').value;
+        if (testurl.length === 0 ){
+            alert("Target API needs to be filled in");
+            return;
+        }
+        window.localStorage.setItem('google_clientid', document.getElementById('clientid').value);
+        window.localStorage.setItem('google_testurl',testurl)
+        const requestInfo = {
+            method: 'GET'
+        };
+        if (withBearerToken === true) {
+            requestInfo.headers = {
+                'Authorization': `Bearer ${document.getElementById('idtoken').innerText}`
+            }
+        }
+
+        const response = await fetch(testurl,requestInfo);
+        const data = await response.text(); 
+        if (response.ok === true) {
+            showAPIInfo(data);
+        } else {
+            alert(`Getting tokenInfo failed. Status: ${response.status} ${response.statusText}`);
+        }
+
+    }
+    function showAPIInfo(data) {
+        const tokenValEle = document.getElementById('tokenvals');
+        tokenValEle.innerText = '';
+        const dataObj = JSON.parse(data);
+        dataObj.forEach((d) => tokenValEle.insertAdjacentHTML('beforeend', `<div style="margin-top:.25em;word-break:break-all">${d.Name}</div>`));
+    }
+</script>
+</html>
