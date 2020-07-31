@@ -1,7 +1,7 @@
 ﻿<!DOCTYPE html>
 <html>
 <head>
-    <meta http-equiv="Content-Security-Policy" content="script-src 'self' 'unsafe-inline' 'unsafe-eval' https://alcdn.msauth.net; connect-src 'self' https://oauth2.googleapis.com http://seveniron"  />
+    <meta http-equiv="Content-Security-Policy" content="script-src 'self' 'unsafe-inline' 'unsafe-eval' https://alcdn.msauth.net; connect-src 'self' https://login.microsoftonline.com  https://oauth2.googleapis.com http://seveniron"  />
     <meta charset="utf-8" />
     <title>Azure API</title>
     <style>
@@ -20,16 +20,13 @@
 <body>
     <div style="margin-left:2em;">
         <div class="f-bold" style=margin-bottom:1em;>AZURE Test</div>
-        <div class="f-bold">Discovery Document</div>
-        <div>
-            <input id="dicoverydoc" style="width:50em" type="text" title="V2 discovery document url. Format should be https://login.microsoftonline/com/{tenantid}/V2.0/.well-known/openid-configurnation"/>
-      </div>
-        <div id="userid" style="margin-top:1em;"></div>
+         <div id="userid" style="margin-top:1em;"></div>
         <div class="f-bold" style="margin-top:1em;">Client ID</div>
         <input type="text" id="clientid" style="width:50em;" value=""" />
-        <div class="f-bold" style="margin-top:1em;">Tenant ID</div>
-        <input type="text" id="tenantid" style="width:50em;" value=""" />
-        <div class="f-bold" style="margin-top:1em;">Target API (Must get a GET type)</div>
+        <div class="f-bold" style="margin-top:1em;">Redirect URI</div>
+        <input type="text" id="redirecturi" style="width:50em;" value=""" />
+     
+         <div class="f-bold" style="margin-top:1em;">Target API (Must get a GET type)</div>
         <input type="text" id="testapi" style="width:50em;" value="http://seveniron/reveilleuseranalytics/api/applications" />
 
         <div id="lbluserid" style="margin-top:1em"></div>
@@ -37,10 +34,11 @@
             <button  id="btnlogin">Login</button>
             <button disabled id="btntestapi" style="margin-left:2em;">Test API</button>
         </div>
-        <div id="lblaccesstoken" class="f-bold d-none" style="margin-top:3em">Access Token</div>
-        <div id="accesstoken" style="word-break:break-all;"></div>
-        <div id="lblexpires" class="f-bold d-none" style="margin-top:1em">Access Token Expires</div>
+        <div id="lblexpires" class="f-bold d-none" style="margin-top:3em">Tokens Expire</div>
         <div id="tokenexpires"></div>
+        <div id="lblaccesstoken" class="f-bold d-none" style="margin-top:2em">Access Token</div>
+        <div id="accesstoken" style="word-break:break-all;"></div>
+        
         <div id="lblidtoken" class="f-bold d-none" style="margin-top:2em;">ID Token</div>
         <div style="display:flex;width:100%;">
             <div id="idtoken" style="width:45%;margin-right:5%;word-break:break-all;"></div>
@@ -52,20 +50,27 @@
 
 <script>
 var azureMsal;
+var loginResponse;
 window.addEventListener('load', () => initApp());
 function initApp()
 {
-    console.log('init app');
-    const clientIdValue = window.localStorage.getItem('azure_clientid');
+     const clientIdValue = window.localStorage.getItem('azure_clientid');
     document.getElementById('clientid').value = clientIdValue === null ? '' : clientIdValue;
-    const tenantid = window.localStorage.getItem('azure_tenantid');
-    document.getElementById('tenantid').value = tenantid === null ? '' : tenantid;
+    const redirectUriValue = window.localStorage.getItem('azure_redirecturi');
+    document.getElementById('redirecturi').value = redirectUriValue === null ? '' : redirectUriValue;
+
     document.getElementById('btnlogin').addEventListener('click', () => doLogin());
-    if (clientIdValue.length > 0){
-        const msalConfig = {
+    if ((clientIdValue.length > 0) && (redirectUriValue.length > 0)) {
+        setupMsal(clientIdValue,redirectUriValue)
+
+    }
+
+}
+function setupMsal(clientid,redirecturi){
+    const msalConfig = {
             auth: {
-                clientId: clientIdValue,
-                redirectUri: 'http://localhost/TYF/'
+                clientId: clientid,
+                redirectUri: redirecturi
             },
             cache:{
                 cacheLocation: 'sessionStorage',
@@ -73,9 +78,6 @@ function initApp()
             }
         }
         azureMsal = new msal.PublicClientApplication(msalConfig); 
-
-    }
-
 }
 async function doLogin(){
    const clientId = document.getElementById('clientid').value;
@@ -85,22 +87,49 @@ async function doLogin(){
        return;
    }
    window.localStorage.setItem('azure_clientid',clientId);
+   const redirecturi = document.getElementById('redirecturi').value;
+   if (redirecturi.length === 0)
+   {
+       alert('redirect URI needs to be entered');
+       return;
+   }
+   window.localStorage.setItem('azure_redirecturi',redirecturi);
+    if (typeof azureMsal === 'undefined'){
+        setupMsal(clientId,redirecturi);
+    }   
+
+
    const loginRequest = {
        scopes:["User.read"]
    }
-   debugger;
    return azureMsal.loginPopup(loginRequest).then((resp) => handleLoginResponse(resp)).catch((error) => alert(`Loginpopup error: ${error}`));
 
 }
 function handleLoginResponse(resp){ 
-    debugger;
     if (resp !== null){
-        document.getElementById('lbluserid').innerText = `Loggin in as ${resp.account.username}`
+        loginResponse = resp;
+
+        document.getElementById('lblexpires').classList.remove('d-none');
+        document.getElementById('tokenexpires').innerText = `${resp.expiresOn.toLocaleDateString()} ${resp.expiresOn.toLocaleTimeString()}`;
+        document.getElementById('lbluserid').innerText = `Logged in in as ${resp.account.username}`;
+        document.getElementById('lblaccesstoken').classList.remove('d-none');
+        document.getElementById('accesstoken').innerText = resp.accessToken;
+        document.getElementById('lblidtoken').classList.remove('d-none');
+        document.getElementById('idtoken').innerText = resp.idToken;
+        showTokenInfo(resp.idTokenClaims);
     } else{
         const currentAccounts = azureMsal.getAllAccounts();
-        debugger;
+
     }
 }
+function showTokenInfo(tokenInfo){
+        const tokenValEle = document.getElementById('tokenvals');
+        tokenValEle.innerText = '';
+       
+        for (const c in tokenInfo) {
+            tokenValEle.insertAdjacentHTML('beforeend', `<div style="margin-top:.25em;word-break:break-all">"${c}" : "${tokenInfo[c]}"</div>`);
+        }
+    }
 
 </script> 
 </html>
